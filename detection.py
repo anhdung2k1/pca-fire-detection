@@ -1,13 +1,16 @@
-import cv2, os
 from tensorflow.keras.utils import img_to_array
-import numpy as np
-from tensorflow.keras.models import load_model
-import tensorflow as tf
 from PIL import Image
+from src.fire_model_build import *
 
 file_location = os.path.abspath(__file__)
 root_directory = os.path.dirname(file_location)
 model_path = os.path.join(root_directory, 'saved_model')
+
+dataset_path = os.path.join(root_directory, 'fire_dataset')
+loaded_model = os.path.exists(model_path)
+model = ModelBuilder(dataset_path, 'fire_model', loaded_model)
+
+
 def get_abspath_file(file):
     return os.path.abspath(file)
 
@@ -27,8 +30,8 @@ train_dir = data_path + "train/"
 test_dir = data_path + "test/"
 fireCascade = cv2.CascadeClassifier("fire_cascade.xml")
 # Detect in the real-time camera
-model = load_model(get_abspath_file(os.path.join(model_path, "model.h5")))
-model.load_weights(get_abspath_file(os.path.join(model_path, "model_emotion.h5")))
+model.model.load_weights(get_abspath_file(os.path.join(model_path, "fire_model_weight.h5")))
+[_, _] = model.pca_fit_transform()
 video = cv2.VideoCapture(0)
 while True:
     _, frame = video.read()
@@ -40,9 +43,15 @@ while True:
         roi_gray = roi_gray.resize((224, 224))
         image_pixels = img_to_array(roi_gray)
         image_pixels = np.expand_dims(image_pixels, axis=0)
+        image_pixels_feature = model.trained_model.predict(image_pixels)
+        image_pixels_feature = image_pixels_feature.reshape(image_pixels_feature.shape[0], -1)
+        image_pixels_PCA = model.pca.transform(image_pixels_feature)
+        predictions = model.model.predict(image_pixels_PCA)
+        predictions = np.argmax(predictions, axis=1)
+        predictions = model.le.inverse_transform(predictions)
+        predictions = predictions[0].split('\\')[-1]
 
-        predictions = model.predict(image_pixels)[0]
-        if predictions > 0.5:
+        if predictions == 'fire_images':
             cv2.rectangle(frame, (x, y), (x + w + 50, y + h + 50), (0, 255, 0), 2)
             cv2.putText(frame, text="fire", org=(x + 50, y - 10), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.6,
                         color=(0, 255, 0), thickness=2)

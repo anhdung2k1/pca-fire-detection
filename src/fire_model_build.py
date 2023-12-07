@@ -21,7 +21,7 @@ class ModelBuilder:
         labels = []
         for dir_path in glob.glob(self.path_in + '/' + target_dir + '/*'):
             label = dir_path.split('/')[-1]
-            for img_path in glob.glob(os.path.join(dir_path, '*.png')):
+            for img_path in glob.glob(os.path.join(dir_path, '*')):
                 img = cv2.imread(img_path, cv2.IMREAD_COLOR)
                 if img is None:
                     continue
@@ -48,10 +48,9 @@ class ModelBuilder:
 
     def __init__(self, path_dataset, model_name, load=False):
         self.IMAGE_SIZE = 224
-        self.VALIDATION_SPLIT = 0.8
-        self.BATCH_SIZE = 64
         self.EPOCHS = 50
         self.n_PCA_components = 300
+        self.pca = PCA(n_components=self.n_PCA_components)
 
         self.path_in = path_dataset
         self.loaded = load
@@ -88,21 +87,19 @@ class ModelBuilder:
         Choose the n_components for PCA
         """
         [train_features, _] = self.features_extractor()
-        pca_test = PCA(n_components=300)
-        pca_test.fit(train_features)
+        self.pca.fit(train_features)
 
-        plt.plot(np.cumsum(pca_test.explained_variance_ratio_))
+        plt.plot(np.cumsum(self.pca.explained_variance_ratio_))
         plt.ylabel("Cum variance")
         # plt.show()
         pca_variance_image = os.path.join(self.assets_dir, 'PCA_variance.png')
         plt.savefig(pca_variance_image)
-        plt.close()
 
     def pca_fit_transform(self):
         [train_features, test_features] = self.features_extractor()
-        pca = PCA(n_components=self.n_PCA_components)
-        train_PCA = pca.fit_transform(train_features)
-        test_PCA = pca.fit_transform(test_features)
+
+        train_PCA = self.pca.fit_transform(train_features)
+        test_PCA = self.pca.fit_transform(test_features)
         return train_PCA, test_PCA
 
     def build_model(self):
@@ -129,8 +126,6 @@ class ModelBuilder:
                                       y_train_one_hot,
                                       steps_per_epoch=len(train_images),
                                       epochs=self.EPOCHS,
-                                      batch_size=self.BATCH_SIZE,
-                                      validation_split=self.VALIDATION_SPLIT,
                                       verbose=1)
 
     def evaluate_model(self):
@@ -139,25 +134,24 @@ class ModelBuilder:
         self.loss, self.acc = self.model.evaluate(test_PCA, y_test_one_hot)
 
         plt.plot(self.history.history['loss'])
-        plt.plot(self.history.history['val_loss'])
         plt.title('Model Loss')
         plt.ylabel('Loss')
         plt.xlabel('Epochs')
-        plt.legend(['Train', 'Test'], loc='upper left')
+        plt.legend(['Train'], loc='upper left')
         # plt.show()
         loss_image = os.path.join(self.assets_dir, 'Model_Loss.png')
         plt.savefig(loss_image)
-        plt.close()
+        plt.clf()
 
         plt.plot(self.history.history['accuracy'])
-        plt.plot(self.history.history['val_accuracy'])
+        plt.title('Model Accuracy')
         plt.ylabel('Accuracy')
         plt.xlabel('Epochs')
-        plt.legend(['Train', 'Test'], loc='upper left')
+        plt.legend(['Train'], loc='upper left')
         # plt.show()
         accuracy_image = os.path.join(self.assets_dir, 'Model_Accuracy.png')
         plt.savefig(accuracy_image)
-        plt.close()
+        plt.clf()
 
     def save_model(self):
         if not self.loaded:
@@ -186,11 +180,13 @@ class ModelBuilder:
         [train_labels_encoded, test_labels_encoded] = self._preprocessing_label(train_labels=train_labels,
                                                                                 test_labels=test_labels)
         train_cm = confusion_matrix(train_labels_encoded, train_predict)
-        test_cm = confusion_matrix(test_labels_encoded, test_predict)
         plot_confusion_matrix(cm=train_cm, target="train", assets_dir=self.assets_dir, classes=self.classNames,
                               title='Confusion Matrix Training')
+        plt.close()
+        test_cm = confusion_matrix(test_labels_encoded, test_predict)
         plot_confusion_matrix(cm=test_cm, target="test", assets_dir=self.assets_dir, classes=self.classNames,
                               title='Confusion Matrix Testing')
+        plt.close()
 
 
 def one_hot_encoder(target):
@@ -207,7 +203,6 @@ def plot_confusion_matrix(cm, assets_dir, target, classes, normalize=False, titl
     plt.yticks(tick_marks, classes)
     confusion_image = os.path.join(assets_dir, 'Confusion_Matrix_{}.png'.format(target))
     plt.savefig(confusion_image)
-    plt.close()
 
     if normalize:
         cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
